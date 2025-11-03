@@ -12,7 +12,7 @@ reusable NetworkX-based functions for synthetic graph generation.
 Each function returns a NetworkX Graph ready for use in the RAND-P3, MTS-M,
 and TIP-DECOMP-R algorithms.
 
-Author: Axl Andrade & Vitor S. Ponciano
+Author: Vitor S. Ponciano, Ygor Hora, Simone Dantas, Axl Andrade
 """
 
 import networkx as nx
