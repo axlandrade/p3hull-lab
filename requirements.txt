@@ -1,0 +1,15 @@
+# Core scientific dependencies
+networkx>=3.2
+numpy>=1.26
+pandas>=2.2
+
+# Visualization and analysis
+matplotlib>=3.8
+seaborn>=0.13
+tqdm>=4.66
+
+# Notebook and development tools
+jupyter
+
+# Optional: for GraphML/Gephi exports (comment out if not needed)
+# pyyed>=1.5
