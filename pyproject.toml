@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "p3hull"
+version = "1.0.0"
+description = "A research toolkit for approximating the P3-hull number in complex networks."
+readme = "README.md"
+authors = [
+  { name = "Vitor S. Ponciano" },
+  { name = "Axl Andrade" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["p3-hull", "graph theory", "network analysis", "approximation algorithms", "social networks"]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+dependencies = [
+  "networkx>=3.2",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "matplotlib>=3.8",
+  "seaborn>=0.13",
+  "tqdm>=4.66",
+  "jupyter"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/<your-username>/p3hull-lab"
+"Issues" = "https://github.com/<your-username>/p3hull-lab/issues"
+
+[tool.setuptools.packages.find]
+include = ["p3hull*"]

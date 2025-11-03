@@ -1,1 +1,5 @@
 .venv/
+
+p3hull.egg-info/
+
+__pycache__/
