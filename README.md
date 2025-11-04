@@ -126,8 +126,8 @@ If you use this repository or its algorithms in academic work, please cite:
 
 ## Authors
 
-- **Vitor S. Ponciano** — Lead author, algorithm design.  
-- **Axl Andrade** — Modeling, computational experiments, and analysis. 
+- **Vitor S. Ponciano**
+- **Axl Andrade**
 - **Ygor Hora**
 - **Simone Dantas** 
 

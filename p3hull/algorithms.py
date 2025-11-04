@@ -149,34 +149,14 @@ def exists_hull(G: nx.Graph, k: int, weights: Optional[Dict] = None,
 
 def rand_p3(G: nx.Graph, low: int = 1, high: Optional[int] = None,
             samples: int = 200, weighted: bool = True,
-            velocity: float = 1.2, seed: int = 42) -> Tuple[Set, int]:
+            velocity: float = 1.2, seed: int = 42,
+            coverage: float = 0.95) -> Tuple[Set, int]:
     """
-    RAND-P3: Randomized binary-search approximation for the P3-hull number.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-        Input graph.
-    low : int
-        Minimum hull size candidate.
-    high : int, optional
-        Maximum hull size candidate (defaults to |V|).
-    samples : int
-        Number of random samples per iteration.
-    weighted : bool
-        Whether to use adaptive weighting.
-    velocity : float
-        Multiplicative factor for successful vertices' weights.
-    seed : int
-        Random seed.
-
-    Returns
-    -------
-    best_hull : set
-        Best hull set found.
-    hull_size : int
-        Approximated P3-hull number.
+    RAND-P3 (corrected version):
+    Randomized binary-search approximation with early stopping when
+    closure covers ≥ coverage * |V|.
     """
+
     random.seed(seed)
     nodes = list(G.nodes())
     n = len(nodes)
@@ -184,19 +164,34 @@ def rand_p3(G: nx.Graph, low: int = 1, high: Optional[int] = None,
         high = n
 
     weights = {v: 1.0 for v in nodes}
-    best_hull, best_k = set(), n
+    best_hull, best_k, best_cov = set(), n, 0.0
 
     while low <= high:
         k = (low + high) // 2
         found, S = exists_hull(G, k, weights, samples, seed + k)
-        if found:
-            best_hull, best_k = S, k
-            high = k - 1  # try smaller
+        H = p3_closure(G, S)
+        cov = len(H) / n
+
+        # early stop if closure covers enough vertices
+        if cov >= coverage:
+            best_hull, best_k, best_cov = S, k, cov
+            high = k - 1  # try smaller k
             if weighted:
                 for v in S:
                     weights[v] *= velocity
         else:
             low = k + 1
+
+    # final refinement: shrink best_hull if closure already near total
+    if best_cov >= coverage:
+        refined = sorted(best_hull)
+        for v in list(refined):
+            test = set(refined)
+            test.remove(v)
+            if len(p3_closure(G, test)) >= coverage * n:
+                refined.remove(v)
+        best_hull = set(refined)
+        best_k = len(best_hull)
 
     return best_hull, best_k
 
@@ -205,98 +200,152 @@ def rand_p3(G: nx.Graph, low: int = 1, high: Optional[int] = None,
 # 5. TIP-DECOMP-R algorithm (randomized)
 # ---------------------------------------------------------------------
 
-def tip_decomp_random(G: nx.Graph, seed: int = 42) -> Set:
+def tip_decomp_random(G: nx.Graph, threshold: int = 2, seed: int = 42) -> set:
     """
-    Randomized version of the TIP-DECOMP algorithm.
+    TIP-DECOMP-R as a TARGET-SET heuristic (what Table 7 reports).
+    Undirected graph, threshold=2 (P3-convexity).
 
-    Removes vertices iteratively, randomly selecting among those with
-    minimal distance values, until a stable core remains.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-        Input graph.
-    seed : int
-        Random seed.
-
-    Returns
-    -------
-    core : set
-        Remaining vertices after decomposition.
+    Rules:
+      - If deg(v) < t(v), v must be in the seed set S.
+      - Otherwise remove a vertex with minimal (deg(v) - t(v)) (random tie).
     """
+    import random
     random.seed(seed)
-    G = G.copy()
-    dist = {v: G.degree(v) - 2 for v in G.nodes()}
-    remaining = set(G.nodes())
+
+    H = G.copy()
+    # threshold t(v)=2 for all; we only need degrees in H
+    t = {v: threshold for v in H.nodes()}
+    S = set()                 # <- THIS is what Table 7 reports
+    remaining = set(H.nodes())
 
     while remaining:
-        min_dist = min(dist[v] for v in remaining)
-        candidates = [v for v in remaining if dist[v] == min_dist]
-        v = random.choice(candidates)
-        remaining.remove(v)
-        for u in list(G.neighbors(v)):
+        # recompute degrees on the current graph
+        deg = {v: H.degree(v) for v in remaining}
+
+        # Case A: vertices that cannot be influenced by remaining (deg < t)
+        forced = [v for v in remaining if deg[v] < t[v]]
+        if forced:
+            v = min(forced, key=lambda x: deg[x])  # deterministic pick among forced
+            S.add(v)
+            # seeding v reduces neighbors' thresholds by 1 (they see one active neighbor)
+            for u in list(H.neighbors(v)):
+                if u in remaining:
+                    t[u] = max(0, t[u] - 1)
+            H.remove_node(v)
+            remaining.remove(v)
+            continue
+
+        # Case B: no forced vertices -> peel one with minimal (deg - t)
+        scores = {v: deg[v] - t[v] for v in remaining}
+        min_score = min(scores.values())
+        candidates = [v for v in remaining if scores[v] == min_score]
+        v = random.choice(candidates)              # <- random tie-break (TIP-DECOMP-R)
+
+        # peeling v (it will be activated later by others)
+        for u in list(H.neighbors(v)):
             if u in remaining:
-                dist[u] = max(0, dist[u] - 1)
-        G.remove_node(v)
+                # edge removal reduces neighbor degree only; thresholds stay
+                pass
+        H.remove_node(v)
+        remaining.remove(v)
 
-    return set(G.nodes())
+    return S
 
+def tip_decomp_deterministic(G, threshold=2):
+    # mesma função, mas v = min(candidates) no caso B
+    import random
+    H = G.copy()
+    t = {v: threshold for v in H.nodes()}
+    S = set()
+    remaining = set(H.nodes())
+    while remaining:
+        deg = {v: H.degree(v) for v in remaining}
+        forced = [v for v in remaining if deg[v] < t[v]]
+        if forced:
+            v = min(forced, key=lambda x: deg[x])
+            S.add(v)
+            for u in list(H.neighbors(v)):
+                if u in remaining:
+                    t[u] = max(0, t[u] - 1)
+            H.remove_node(v); remaining.remove(v)
+            continue
+        scores = {v: deg[v] - t[v] for v in remaining}
+        min_score = min(scores.values())
+        candidates = [v for v in remaining if scores[v] == min_score]
+        v = min(candidates)  # determinístico
+        H.remove_node(v); remaining.remove(v)
+    return S
 
 # ---------------------------------------------------------------------
 # 6. MTS-M algorithm (modified Minimum Target Set)
 # ---------------------------------------------------------------------
 
-def mts_m(G: nx.Graph) -> Set:
+def mts_m(G: nx.Graph, threshold: int = 2) -> set:
     """
-    Simplified and modified version of the MTS algorithm
-    (Cordasco et al., 2016), adapted for undirected graphs
-    and threshold t(v) = 2 for all vertices.
-
-    Parameters
-    ----------
-    G : networkx.Graph
-        Input graph.
-
-    Returns
-    -------
-    S : set
-        Target set (approximate hull set).
+    Modified Minimal Target Set (MTS-M)
+    Variante que prioriza vértices com maior grau entre os forçados.
     """
-    G = G.copy()
-    t = {v: 2 for v in G.nodes()}     # threshold
-    delta = {v: G.degree(v) for v in G.nodes()}
-    U, S, L = set(G.nodes()), set(), set()
+    H = G.copy()
+    S = set()
+    t = {v: threshold for v in H.nodes()}
+    remaining = set(H.nodes())
 
-    while U:
-        # Case 1: vertex already influenced
-        case1 = [v for v in U if t[v] <= 0]
-        if case1:
-            v = case1[0]
-            for u in G.neighbors(v):
-                if u in U:
-                    t[u] = max(t[u] - 1, 0)
-            U.remove(v)
-            continue
-
-        # Case 2: vertex cannot be influenced by remaining
-        case2 = [v for v in U if delta[v] < t[v]]
-        if case2:
-            v = min(case2, key=lambda x: delta[x])
+    while remaining:
+        deg = {v: H.degree(v) for v in remaining}
+        forced = [v for v in remaining if deg[v] < t[v]]
+        if forced:
+            v = max(forced, key=lambda x: deg[x])  # diferença: maior grau
             S.add(v)
-            for u in G.neighbors(v):
-                if u in U:
-                    t[u] = max(t[u] - 1, 0)
-                    delta[u] = max(delta[u] - 1, 0)
-            U.remove(v)
+            for u in list(H.neighbors(v)):
+                if u in remaining:
+                    t[u] = max(0, t[u] - 1)
+            H.remove_node(v)
+            remaining.remove(v)
             continue
 
-        # Case 3: pick vertex with minimal score (heuristic)
-        v = min(U, key=lambda x: t[x] * (delta[x] + 1))
-        for u in G.neighbors(v):
-            if u in U:
-                delta[u] = max(delta[u] - 1, 0)
-        L.add(v)
-        U.remove(v)
+        scores = {v: deg[v] - t[v] for v in remaining}
+        min_score = min(scores.values())
+        candidates = [v for v in remaining if scores[v] == min_score]
+        v = max(candidates)  # diferença: escolhe o de maior ID
+        H.remove_node(v)
+        remaining.remove(v)
+
+    return S
+
+
+def mts(G: nx.Graph, threshold: int = 2) -> set:
+    """
+    Minimal Target Set heuristic (Ponciano & Andrade, 2025).
+    Identifica o menor conjunto de vértices capaz de ativar toda a rede.
+    """
+    H = G.copy()
+    S = set()
+    t = {v: threshold for v in H.nodes()}
+    remaining = set(H.nodes())
+
+    while remaining:
+        # Recalcula graus
+        deg = {v: H.degree(v) for v in remaining}
+
+        # Caso 1: vértices que não podem ser ativados por vizinhos
+        forced = [v for v in remaining if deg[v] < t[v]]
+        if forced:
+            v = min(forced, key=lambda x: deg[x])  # determinístico
+            S.add(v)
+            for u in list(H.neighbors(v)):
+                if u in remaining:
+                    t[u] = max(0, t[u] - 1)
+            H.remove_node(v)
+            remaining.remove(v)
+            continue
+
+        # Caso 2: nenhum vértice forçado — remove o de menor (grau - limiar)
+        scores = {v: deg[v] - t[v] for v in remaining}
+        min_score = min(scores.values())
+        candidates = [v for v in remaining if scores[v] == min_score]
+        v = min(candidates)
+        H.remove_node(v)
+        remaining.remove(v)
 
     return S
 
